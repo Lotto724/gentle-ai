@@ -7,6 +7,25 @@
 - Coverage: `vitest --coverage`, `jest --coverage`, `c8`, `pytest-cov`, `go test -cover`, `coverlet`.
 - Quality: linter, type checker, formatter commands.
 
+## Search Strategy Contract
+
+Resolve `search_strategy` using the same first-match-wins shape as Strict TDD:
+
+1. Agent/system marker: explicit `search_strategy` wins.
+2. `openspec/config.yaml`: explicit `search_strategy` wins.
+3. MCP auto-detection: enable `hybrid` only when a tool name/description explicitly mentions semantic, vector, or embedding-backed code search.
+4. Fallback: `grep` is the silent default; do not prompt the user.
+
+Generic names such as `code_search` are not enough unless the description indicates embeddings. Persist the resolved block alongside project context/config:
+
+```yaml
+search_strategy:
+  mode: grep # or hybrid
+  # rag:
+  #   mcp_tool: "{semantic_search_tool}"
+  #   reindex_tool: "{optional_reindex_tool}"
+```
+
 ## Skill Registry Scan Rules
 
 - Scan user skills: `~/.claude/skills/`, `~/.config/opencode/skills/`, `~/.gemini/skills/`, `~/.cursor/skills/`, `~/.copilot/skills/`, and the parent directory of this skill file.
@@ -56,7 +75,7 @@ openspec/
     └── archive/
 ```
 
-`config.yaml` should include concise context, `strict_tdd`, testing capabilities, and phase rules for proposal/spec/design/tasks/apply/verify/archive. Keep `context:` under 10 lines.
+`config.yaml` should include concise context, `strict_tdd`, `search_strategy`, testing capabilities, and phase rules for proposal/spec/design/tasks/apply/verify/archive. Keep `context:` under 10 lines.
 
 ## Testing Capabilities Format
 
@@ -91,4 +110,4 @@ openspec/
 
 ## Output Templates
 
-For each mode, include project, stack, persistence, Strict TDD Mode, Testing Capabilities table, artifacts created/saved, limitations where relevant, and next steps. Engram mode must mention local/non-shareable limitations; none mode must recommend enabling persistence.
+For each mode, include project, stack, persistence, Strict TDD Mode, Search Strategy, Testing Capabilities table, artifacts created/saved, limitations where relevant, and next steps. Engram mode must mention local/non-shareable limitations; none mode must recommend enabling persistence.
