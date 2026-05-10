@@ -153,6 +153,14 @@ Sub-agents get a fresh context with NO memory. The orchestrator controls context
 | `sdd-verify` | spec + tasks | `verify-report` |
 | `sdd-archive` | all artifacts | `archive-report` |
 
+### Search Strategy Forwarding (MANDATORY)
+
+When launching `sdd-explore`, `sdd-apply`, or `sdd-verify`, the orchestrator MUST:
+
+1. Search for project context: `mem_search(query: "sdd-init/{project}", project: "{project}")` → `mem_get_observation(id)`
+2. If the result contains a `search_strategy` block, add: `"SEARCH STRATEGY CONFIG DETECTED. Mode: {search_strategy.mode}. RAG MCP tool: {search_strategy.rag.mcp_tool} (optional reindex: {search_strategy.rag.reindex_tool}). Follow Section F in sdd-phase-common.md for code search."`
+3. If `search_strategy` is missing, do NOT add any extra instruction (sub-agents default to grep per Section F)
+
 ### Engram Topic Key Format
 
 | Artifact | Topic Key |

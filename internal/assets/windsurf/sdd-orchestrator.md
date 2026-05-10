@@ -288,8 +288,8 @@ When launching `sdd-explore`, `sdd-apply`, or `sdd-verify` sub-agents, the orche
 
 1. Search for project context: `mem_search(query: "sdd-init/{project}", project: "{project}")` → `mem_get_observation(id)`
 2. If the result contains a `search_strategy` block:
-   - Add to the sub-agent prompt: "SEARCH STRATEGY CONFIG DETECTED. Mode: {search_strategy.mode}. RAG MCP tool: {search_strategy.rag.mcp_tool} (optional reindex: {search_strategy.rag.reindex_tool}). Follow Section E in sdd-phase-common.md for code search."
-3. If `search_strategy` is missing, do NOT add any extra instruction (sub-agents default to grep per Section E).
+   - Add to the sub-agent prompt: "SEARCH STRATEGY CONFIG DETECTED. Mode: {search_strategy.mode}. RAG MCP tool: {search_strategy.rag.mcp_tool} (optional reindex: {search_strategy.rag.reindex_tool}). Follow Section F in sdd-phase-common.md for code search."
+3. If `search_strategy` is missing, do NOT add any extra instruction (sub-agents default to grep per Section F).
 
 Resolve this ONCE per session (at first explore/apply/verify launch) and cache it.
 

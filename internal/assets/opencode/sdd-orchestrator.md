@@ -210,6 +210,14 @@ When launching `sdd-apply` or `sdd-verify`, the orchestrator MUST:
 2. If the result contains `strict_tdd: true`, add: `"STRICT TDD MODE IS ACTIVE. Test runner: {test_command}. You MUST follow strict-tdd.md. Do NOT fall back to Standard Mode."`
 3. If the search fails or `strict_tdd` is not found, do NOT add the TDD instruction
 
+#### Search Strategy Forwarding (MANDATORY)
+
+When launching `sdd-explore`, `sdd-apply`, or `sdd-verify`, the orchestrator MUST:
+
+1. Search for project context: `mem_search(query: "sdd-init/{project}", project: "{project}")` → `mem_get_observation(id)`
+2. If the result contains a `search_strategy` block, add: `"SEARCH STRATEGY CONFIG DETECTED. Mode: {search_strategy.mode}. RAG MCP tool: {search_strategy.rag.mcp_tool} (optional reindex: {search_strategy.rag.reindex_tool}). Follow Section F in sdd-phase-common.md for code search."`
+3. If `search_strategy` is missing, do NOT add any extra instruction (sub-agents default to grep per Section F)
+
 #### Apply-Progress Continuity (MANDATORY)
 
 When launching `sdd-apply` for a continuation batch:

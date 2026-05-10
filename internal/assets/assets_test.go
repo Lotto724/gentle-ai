@@ -412,6 +412,78 @@ func TestSDDPhaseCommonEnforcesExecutorBoundary(t *testing.T) {
 	}
 }
 
+func TestSDDSearchStrategyContract(t *testing.T) {
+	orchestrators := []string{
+		"generic/sdd-orchestrator.md",
+		"claude/sdd-orchestrator.md",
+		"opencode/sdd-orchestrator.md",
+		"gemini/sdd-orchestrator.md",
+		"codex/sdd-orchestrator.md",
+		"cursor/sdd-orchestrator.md",
+		"windsurf/sdd-orchestrator.md",
+		"antigravity/sdd-orchestrator.md",
+		"kiro/sdd-orchestrator.md",
+		"kimi/sdd-orchestrator.md",
+		"qwen/sdd-orchestrator.md",
+	}
+
+	for _, assetPath := range orchestrators {
+		t.Run(assetPath, func(t *testing.T) {
+			content := MustRead(assetPath)
+			for _, want := range []string{
+				"Search Strategy Forwarding (MANDATORY)",
+				"sdd-explore", "sdd-apply", "sdd-verify",
+				`mem_search(query: "sdd-init/{project}"`,
+				"SEARCH STRATEGY CONFIG DETECTED",
+				"Section F",
+				"grep",
+			} {
+				if !strings.Contains(content, want) {
+					t.Fatalf("%q missing search strategy contract %q", assetPath, want)
+				}
+			}
+		})
+	}
+
+	phaseCommon := MustRead("skills/_shared/sdd-phase-common.md")
+	for _, want := range []string{
+		"## F. Code Search Protocol",
+		"`grep` | Current behavior",
+		"`hybrid` | RAG-first cascade with grep fallback",
+		"If `mode` is `hybrid` but `rag.mcp_tool` is missing or empty, fall back to `grep`",
+		"If `mode` is `hybrid` but the MCP tool call fails",
+		"grep fallback guarantees correctness",
+	} {
+		if !strings.Contains(phaseCommon, want) {
+			t.Fatalf("sdd-phase-common missing search strategy boundary %q", want)
+		}
+	}
+
+	initSkill := MustRead("skills/sdd-init/SKILL.md")
+	for _, want := range []string{
+		"Resolve `search_strategy` from agent marker",
+		"semantic/vector/embedding",
+		"no qualifying RAG MCP tool",
+		"Search Strategy status",
+	} {
+		if !strings.Contains(initSkill, want) {
+			t.Fatalf("sdd-init missing search strategy detection contract %q", want)
+		}
+	}
+
+	applySkill := MustRead("skills/sdd-apply/SKILL.md")
+	for _, want := range []string{
+		"3a. Read `search_strategy`",
+		"3b. Read existing code",
+		"#### Step 6b: Reindex Hook (Section F)",
+		"cached in Step 3a",
+	} {
+		if !strings.Contains(applySkill, want) {
+			t.Fatalf("sdd-apply missing search strategy apply contract %q", want)
+		}
+	}
+}
+
 func TestOpenCodeSDDOverlaySubagentsAreExplicitExecutors(t *testing.T) {
 	for _, assetPath := range []string{"opencode/sdd-overlay-single.json", "opencode/sdd-overlay-multi.json"} {
 		t.Run(assetPath, func(t *testing.T) {
