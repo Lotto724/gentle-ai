@@ -25,8 +25,10 @@ type bootstrapper interface {
 	BootstrapTemplate(homeDir string) error
 }
 
-// outputStyleOverlayJSON is the settings.json overlay to enable the Gentleman output style.
-var outputStyleOverlayJSON = []byte("{\n  \"outputStyle\": \"Gentleman\"\n}\n")
+// outputStyleOverlayJSON returns the settings.json overlay to enable a persona output style.
+func outputStyleOverlayJSON(styleName string) []byte {
+	return []byte(fmt.Sprintf("{\n  \"outputStyle\": %q\n}\n", styleName))
+}
 
 // openCodeAgentOverlayJSON defines the Tab-switchable persona agent for OpenCode.
 // SDD is installed separately by the SDD component as "gentle-orchestrator";
@@ -287,11 +289,11 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 		changed = changed || wr1.Changed
 		files = append(files, personaPath)
 
-		// Module 2: output-style (Gentleman only; empty file for neutral keeps the
-		// include harmless via "ignore missing" in the template).
+		// Module 2: output-style (Gentleman-style personas only; empty file for
+		// neutral keeps the include harmless via "ignore missing" in the template).
 		outputStyleContent := ""
-		if persona == model.PersonaGentleman {
-			outputStyleContent = assets.MustRead("kimi/output-style-gentleman.md")
+		if spec, ok := outputStyleSpecForPersona(persona, "kimi"); ok {
+			outputStyleContent = assets.MustRead(spec.assetPath)
 		}
 		outputStylePath := filepath.Join(configDir, "output-style.md")
 		wr2, err := filemerge.WriteFileAtomic(outputStylePath, []byte(outputStyleContent), 0o644)
@@ -310,7 +312,7 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 	if !syncManaged && (adapter.Agent() == model.AgentOpenCode || adapter.Agent() == model.AgentKilocode) && persona != model.PersonaCustom {
 		settingsPath := adapter.SettingsPath(homeDir)
 		if settingsPath != "" {
-			if persona == model.PersonaGentleman {
+			if isGentlemanStylePersona(persona) {
 				agentResult, err := mergeJSONFile(settingsPath, openCodeAgentOverlayJSON)
 				if err != nil {
 					return InjectionResult{}, err
@@ -333,12 +335,12 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 		}
 	}
 
-	// 3. Gentleman-only: write output style + merge into settings (if agent supports it).
-	if persona == model.PersonaGentleman && adapter.Agent() != model.AgentOpenClaw && adapter.SupportsOutputStyles() {
+	// 3. Gentleman-style: write output style + merge into settings (if agent supports it).
+	if spec, ok := outputStyleSpecForPersona(persona, "claude"); ok && adapter.Agent() != model.AgentOpenClaw && adapter.SupportsOutputStyles() {
 		outputStyleDir := adapter.OutputStyleDir(homeDir)
 		if outputStyleDir != "" {
-			outputStylePath := outputStyleDir + "/gentleman.md"
-			outputStyleContent := assets.MustRead("claude/output-style-gentleman.md")
+			outputStylePath := filepath.Join(outputStyleDir, spec.fileName)
+			outputStyleContent := assets.MustRead(spec.assetPath)
 
 			styleResult, err := filemerge.WriteFileAtomic(outputStylePath, []byte(outputStyleContent), 0o644)
 			if err != nil {
@@ -346,12 +348,20 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 			}
 			changed = changed || styleResult.Changed
 			files = append(files, outputStylePath)
+
+			removedFiles, err := removeInactiveOutputStyleFiles(outputStyleDir, spec.fileName)
+			if err != nil {
+				return InjectionResult{}, err
+			}
+			if len(removedFiles) > 0 {
+				changed = true
+				files = append(files, removedFiles...)
+			}
 		}
 
-		// Merge "outputStyle": "Gentleman" into settings.
 		settingsPath := adapter.SettingsPath(homeDir)
 		if settingsPath != "" {
-			settingsResult, err := mergeJSONFile(settingsPath, outputStyleOverlayJSON)
+			settingsResult, err := mergeJSONFile(settingsPath, outputStyleOverlayJSON(spec.styleName))
 			if err != nil {
 				return InjectionResult{}, err
 			}
@@ -361,30 +371,31 @@ func injectInternal(homeDir string, adapter agents.Adapter, persona model.Person
 	}
 
 	// 3b. Non-gentleman cleanup: remove residual Gentleman output-style artifacts
-	// left by a previous install when the user switches away from the gentleman persona.
-	if persona != model.PersonaGentleman && adapter.Agent() != model.AgentOpenClaw && adapter.SupportsOutputStyles() {
+	// left by a previous install when the user switches away from a gentleman-style persona.
+	if !isGentlemanStylePersona(persona) && adapter.Agent() != model.AgentOpenClaw && adapter.SupportsOutputStyles() {
 		outputStyleDir := adapter.OutputStyleDir(homeDir)
 		if outputStyleDir != "" {
-			outputStylePath := outputStyleDir + "/gentleman.md"
-			styleRemoved, err := removeFileAtomic(outputStylePath)
+			removedFiles, err := removeInactiveOutputStyleFiles(outputStyleDir, "")
 			if err != nil {
-				return InjectionResult{}, fmt.Errorf("remove gentleman output style: %w", err)
+				return InjectionResult{}, fmt.Errorf("remove gentleman output styles: %w", err)
 			}
-			if styleRemoved {
+			if len(removedFiles) > 0 {
 				changed = true
-				files = append(files, outputStylePath)
+				files = append(files, removedFiles...)
 			}
 		}
 
 		settingsPath := adapter.SettingsPath(homeDir)
 		if settingsPath != "" {
-			removed, err := removeJSONKeyIfValue(settingsPath, "outputStyle", "Gentleman")
-			if err != nil {
-				return InjectionResult{}, fmt.Errorf("clean outputStyle from settings: %w", err)
-			}
-			if removed {
-				changed = true
-				files = append(files, settingsPath)
+			for _, styleName := range gentlemanOutputStyleNames() {
+				removed, err := removeJSONKeyIfValue(settingsPath, "outputStyle", styleName)
+				if err != nil {
+					return InjectionResult{}, fmt.Errorf("clean outputStyle from settings: %w", err)
+				}
+				if removed {
+					changed = true
+					files = append(files, settingsPath)
+				}
 			}
 		}
 	}
@@ -437,7 +448,9 @@ func isExactLegacyPersonaAsset(existing string) bool {
 	}
 	for _, assetPath := range []string{
 		"opencode/persona-gentleman.md",
+		"opencode/persona-gentleman-neutral-artifacts.md",
 		"generic/persona-gentleman.md",
+		"generic/persona-gentleman-neutral-artifacts.md",
 		"generic/persona-neutral.md",
 	} {
 		asset := strings.TrimSpace(assets.MustRead(assetPath))
@@ -458,25 +471,85 @@ func personaContent(agent model.AgentID, persona model.PersonaID) string {
 		return assets.MustRead("generic/persona-neutral.md")
 	case model.PersonaCustom:
 		return ""
+	case model.PersonaGentlemanNeutralArtifacts:
+		return gentlemanPersonaContent(agent, "gentleman-neutral-artifacts")
 	default:
-		// Gentleman persona — try agent-specific asset, then generic fallback.
-		switch agent {
-		case model.AgentClaudeCode:
-			return assets.MustRead("claude/persona-gentleman.md")
-		case model.AgentOpenCode, model.AgentKilocode:
-			return assets.MustRead("opencode/persona-gentleman.md")
-		case model.AgentKimi:
-			return assets.MustRead("kimi/persona-gentleman.md")
-		case model.AgentKiroIDE:
-			// Kiro uses a steering-file based persona. The asset is identical to
-			// generic today but kept separate so it can diverge independently.
-			return assets.MustRead("kiro/persona-gentleman.md")
-		default:
-			// Generic persona includes Gentleman personality + skills table + SDD orchestrator.
-			// Used by Gemini CLI, Cursor, VS Code Copilot, and any future agents.
-			return assets.MustRead("generic/persona-gentleman.md")
+		return gentlemanPersonaContent(agent, "gentleman")
+	}
+}
+
+func gentlemanPersonaContent(agent model.AgentID, assetSuffix string) string {
+	switch agent {
+	case model.AgentClaudeCode:
+		return assets.MustRead("claude/persona-" + assetSuffix + ".md")
+	case model.AgentOpenCode, model.AgentKilocode:
+		return assets.MustRead("opencode/persona-" + assetSuffix + ".md")
+	case model.AgentKimi:
+		return assets.MustRead("kimi/persona-" + assetSuffix + ".md")
+	case model.AgentKiroIDE:
+		// Kiro uses a steering-file based persona. The asset is identical to
+		// generic today but kept separate so it can diverge independently.
+		return assets.MustRead("kiro/persona-" + assetSuffix + ".md")
+	default:
+		// Generic persona includes Gentleman personality + skills table + SDD orchestrator.
+		// Used by Gemini CLI, Cursor, VS Code Copilot, and any future agents.
+		return assets.MustRead("generic/persona-" + assetSuffix + ".md")
+	}
+}
+
+type outputStyleSpec struct {
+	styleName string
+	fileName  string
+	assetPath string
+}
+
+func isGentlemanStylePersona(persona model.PersonaID) bool {
+	return persona == model.PersonaGentleman || persona == model.PersonaGentlemanNeutralArtifacts
+}
+
+func outputStyleSpecForPersona(persona model.PersonaID, agentFamily string) (outputStyleSpec, bool) {
+	switch persona {
+	case model.PersonaGentleman:
+		return outputStyleSpec{
+			styleName: "Gentleman",
+			fileName:  "gentleman.md",
+			assetPath: agentFamily + "/output-style-gentleman.md",
+		}, true
+	case model.PersonaGentlemanNeutralArtifacts:
+		return outputStyleSpec{
+			styleName: "Gentleman Neutral Artifacts",
+			fileName:  "gentleman-neutral-artifacts.md",
+			assetPath: agentFamily + "/output-style-gentleman-neutral-artifacts.md",
+		}, true
+	default:
+		return outputStyleSpec{}, false
+	}
+}
+
+func gentlemanOutputStyleNames() []string {
+	return []string{"Gentleman", "Gentleman Neutral Artifacts"}
+}
+
+func gentlemanOutputStyleFiles() []string {
+	return []string{"gentleman.md", "gentleman-neutral-artifacts.md"}
+}
+
+func removeInactiveOutputStyleFiles(outputStyleDir, activeFile string) ([]string, error) {
+	removedFiles := []string{}
+	for _, fileName := range gentlemanOutputStyleFiles() {
+		if fileName == activeFile {
+			continue
+		}
+		outputStylePath := filepath.Join(outputStyleDir, fileName)
+		styleRemoved, err := removeFileAtomic(outputStylePath)
+		if err != nil {
+			return nil, err
+		}
+		if styleRemoved {
+			removedFiles = append(removedFiles, outputStylePath)
 		}
 	}
+	return removedFiles, nil
 }
 
 func mergeJSONFile(path string, overlay []byte) (filemerge.WriteResult, error) {

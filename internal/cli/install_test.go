@@ -79,6 +79,19 @@ func TestNormalizeInstallFlagsDefaults(t *testing.T) {
 	}
 }
 
+func TestNormalizeInstallFlagsAcceptsGentlemanNeutralArtifactsPersona(t *testing.T) {
+	input, err := NormalizeInstallFlags(InstallFlags{
+		Persona: string(model.PersonaGentlemanNeutralArtifacts),
+	}, system.DetectionResult{})
+	if err != nil {
+		t.Fatalf("NormalizeInstallFlags() error = %v", err)
+	}
+
+	if got := input.Selection.Persona; got != model.PersonaGentlemanNeutralArtifacts {
+		t.Fatalf("persona = %q, want %q", got, model.PersonaGentlemanNeutralArtifacts)
+	}
+}
+
 func TestNormalizeInstallFlagsCustomAcceptsOptionalGentlemanInstallables(t *testing.T) {
 	input, err := NormalizeInstallFlags(InstallFlags{
 		Preset:     string(model.PresetCustom),

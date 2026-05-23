@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -174,6 +175,61 @@ func TestComponentPathsSDDKimiIncludesAgentFilesAndGlobalSkills(t *testing.T) {
 		if !containsPath(paths, want) {
 			t.Fatalf("componentPaths(sdd,kimi) missing %q\npaths=%v", want, paths)
 		}
+	}
+}
+
+func TestComponentPathsPersonaKimiIncludesJinjaModules(t *testing.T) {
+	home := t.TempDir()
+	adapters := resolveAdapters([]model.AgentID{model.AgentKimi})
+
+	paths := componentPaths(home, model.Selection{Persona: model.PersonaGentlemanNeutralArtifacts}, adapters, model.ComponentPersona)
+
+	for _, want := range []string{
+		filepath.Join(home, ".kimi", "KIMI.md"),
+		filepath.Join(home, ".kimi", "persona.md"),
+		filepath.Join(home, ".kimi", "output-style.md"),
+		filepath.Join(home, ".kimi", "config.toml"),
+	} {
+		if !containsPath(paths, want) {
+			t.Fatalf("componentPaths(persona,kimi) missing %q\npaths=%v", want, paths)
+		}
+	}
+}
+
+func TestComponentPathsPersonaClaudeIncludesActiveAndCleanupOutputStyles(t *testing.T) {
+	home := t.TempDir()
+	adapters := resolveAdapters([]model.AgentID{model.AgentClaudeCode})
+	staleStyle := filepath.Join(home, ".claude", "output-styles", "gentleman.md")
+	if err := os.MkdirAll(filepath.Dir(staleStyle), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(staleStyle, []byte("stale"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	paths := componentPaths(home, model.Selection{Persona: model.PersonaGentlemanNeutralArtifacts}, adapters, model.ComponentPersona)
+
+	for _, want := range []string{
+		filepath.Join(home, ".claude", "CLAUDE.md"),
+		filepath.Join(home, ".claude", "output-styles", "gentleman.md"),
+		filepath.Join(home, ".claude", "output-styles", "gentleman-neutral-artifacts.md"),
+		filepath.Join(home, ".claude", "settings.json"),
+	} {
+		if !containsPath(paths, want) {
+			t.Fatalf("componentPaths(persona,claude) missing %q\npaths=%v", want, paths)
+		}
+	}
+}
+
+func TestComponentPathsPersonaOpenCodeIncludesInstallOnlySettings(t *testing.T) {
+	home := t.TempDir()
+	adapters := resolveAdapters([]model.AgentID{model.AgentOpenCode})
+
+	paths := componentPaths(home, model.Selection{Persona: model.PersonaGentlemanNeutralArtifacts}, adapters, model.ComponentPersona)
+
+	settingsPath := filepath.Join(home, ".config", "opencode", "opencode.json")
+	if !containsPath(paths, settingsPath) {
+		t.Fatalf("componentPaths(persona,opencode) missing install-only settings path %q\npaths=%v", settingsPath, paths)
 	}
 }
 

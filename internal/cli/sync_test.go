@@ -2240,6 +2240,39 @@ func TestSyncPersonaPathsExcludeOpenCodeAgentJson(t *testing.T) {
 // TestRunSyncRegeneratesPersonaBlockBetweenMarkers verifies the core fix:
 // when an old persona block lives between markers, sync replaces it with the
 // embedded asset for the current version.
+func TestSyncPersonaPathsIncludeJinjaModulesAndOutputStyleCleanupTargets(t *testing.T) {
+	home := t.TempDir()
+	reg, _ := agents.NewDefaultRegistry()
+	kimiAdapter, _ := reg.Get(model.AgentKimi)
+	claudeAdapter, _ := reg.Get(model.AgentClaudeCode)
+
+	paths := syncPersonaPaths(home, model.Selection{Persona: model.PersonaGentlemanNeutralArtifacts}, []agents.Adapter{kimiAdapter, claudeAdapter})
+
+	staleStyle := filepath.Join(home, ".claude", "output-styles", "gentleman.md")
+	if err := os.MkdirAll(filepath.Dir(staleStyle), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(staleStyle, []byte("stale"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	paths = syncPersonaPaths(home, model.Selection{Persona: model.PersonaGentlemanNeutralArtifacts}, []agents.Adapter{kimiAdapter, claudeAdapter})
+
+	for _, want := range []string{
+		filepath.Join(home, ".kimi", "KIMI.md"),
+		filepath.Join(home, ".kimi", "persona.md"),
+		filepath.Join(home, ".kimi", "output-style.md"),
+		filepath.Join(home, ".kimi", "config.toml"),
+		filepath.Join(home, ".claude", "output-styles", "gentleman.md"),
+		filepath.Join(home, ".claude", "output-styles", "gentleman-neutral-artifacts.md"),
+		filepath.Join(home, ".claude", "settings.json"),
+	} {
+		if !containsPath(paths, want) {
+			t.Fatalf("syncPersonaPaths missing %q\npaths=%v", want, paths)
+		}
+	}
+}
+
 func TestRunSyncRegeneratesPersonaBlockBetweenMarkers(t *testing.T) {
 	home := t.TempDir()
 	setSyncTestHome(t, home)

@@ -453,6 +453,27 @@ func TestGoldenPersona_Claude_Gentleman(t *testing.T) {
 	assertGolden(t, "persona-claude-gentleman-settings.golden", settingsJSON)
 }
 
+func TestGoldenPersona_Claude_GentlemanNeutralArtifacts(t *testing.T) {
+	home := t.TempDir()
+
+	result, err := persona.Inject(home, claudeAdapter(), model.PersonaGentlemanNeutralArtifacts)
+	if err != nil {
+		t.Fatalf("persona.Inject(claude, gentleman-neutral-artifacts) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("persona.Inject(claude, gentleman-neutral-artifacts) changed = false")
+	}
+
+	claudeMD := readTestFile(t, filepath.Join(home, ".claude", "CLAUDE.md"))
+	assertGolden(t, "persona-claude-gentleman-neutral-artifacts.golden", claudeMD)
+
+	outputStyle := readTestFile(t, filepath.Join(home, ".claude", "output-styles", "gentleman-neutral-artifacts.md"))
+	assertGolden(t, "persona-claude-gentleman-neutral-artifacts-outputstyle.golden", outputStyle)
+
+	settingsJSON := readTestFile(t, filepath.Join(home, ".claude", "settings.json"))
+	assertGolden(t, "persona-claude-gentleman-neutral-artifacts-settings.golden", settingsJSON)
+}
+
 func TestGoldenPersona_Claude_Neutral(t *testing.T) {
 	home := t.TempDir()
 
@@ -481,6 +502,21 @@ func TestGoldenPersona_OpenCode_Gentleman(t *testing.T) {
 
 	agentsMD := readTestFile(t, filepath.Join(home, ".config", "opencode", "AGENTS.md"))
 	assertGolden(t, "persona-opencode-gentleman.golden", agentsMD)
+}
+
+func TestGoldenPersona_OpenCode_GentlemanNeutralArtifacts(t *testing.T) {
+	home := t.TempDir()
+
+	result, err := persona.Inject(home, opencodeAdapter(), model.PersonaGentlemanNeutralArtifacts)
+	if err != nil {
+		t.Fatalf("persona.Inject(opencode, gentleman-neutral-artifacts) error = %v", err)
+	}
+	if !result.Changed {
+		t.Fatalf("persona.Inject(opencode, gentleman-neutral-artifacts) changed = false")
+	}
+
+	agentsMD := readTestFile(t, filepath.Join(home, ".config", "opencode", "AGENTS.md"))
+	assertGolden(t, "persona-opencode-gentleman-neutral-artifacts.golden", agentsMD)
 }
 
 func TestGoldenPersona_OpenCode_Neutral(t *testing.T) {

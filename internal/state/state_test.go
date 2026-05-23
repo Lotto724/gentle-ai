@@ -32,7 +32,7 @@ func TestWriteAndRead(t *testing.T) {
 // `gentle-ai sync` regenerates the persona the user actually selected — not a
 // hard-coded default.
 func TestPersonaRoundTrip(t *testing.T) {
-	for _, persona := range []string{"gentleman", "neutral", "custom"} {
+	for _, persona := range []string{"gentleman", "gentleman-neutral-artifacts", "neutral", "custom"} {
 		t.Run(persona, func(t *testing.T) {
 			home := t.TempDir()
 			if err := Write(home, InstallState{

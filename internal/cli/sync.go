@@ -477,7 +477,7 @@ func syncComponentPathsWithWorkspace(homeDir, workspaceDir string, selection mod
 // sync. Mirrors persona.InjectForSync:
 //   - Step 1: SystemPromptFile (the marker-bound markdown block — CLAUDE.md /
 //     AGENTS.md / equivalent).
-//   - Step 3: Gentleman output-style overlay (only when the agent supports it).
+//   - Step 3: Gentleman-style output-style overlay (only when the agent supports it).
 //
 // Step 2 (OpenCode/Kilocode agent definition in opencode.json) is install-only
 // and intentionally NOT declared here.
@@ -492,22 +492,7 @@ func syncPersonaPathsWithWorkspace(homeDir, workspaceDir string, selection model
 	paths := []string{}
 	for _, adapter := range adapters {
 		targetDir := componentInjectionDir(homeDir, workspaceDir, adapter)
-		if adapter.Agent() == model.AgentOpenClaw {
-			paths = append(paths, filepath.Join(targetDir, "SOUL.md"))
-			continue
-		}
-		if !adapter.SupportsSystemPrompt() {
-			continue
-		}
-		if adapter.SystemPromptStrategy() != model.StrategyJinjaModules {
-			paths = append(paths, adapter.SystemPromptFile(targetDir))
-		}
-		if selection.Persona == model.PersonaGentleman && adapter.SupportsOutputStyles() {
-			paths = append(paths, adapter.OutputStyleDir(targetDir)+"/gentleman.md")
-			if p := adapter.SettingsPath(targetDir); p != "" {
-				paths = append(paths, p)
-			}
-		}
+		paths = append(paths, personaComponentPaths(targetDir, selection.Persona, adapter, false)...)
 	}
 	return paths
 }

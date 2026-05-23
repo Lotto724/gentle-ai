@@ -182,6 +182,79 @@ func TestInjectClaudeGentlemanWritesOutputStyleFile(t *testing.T) {
 	}
 }
 
+func TestInjectClaudeGentlemanNeutralArtifactsKeepsReplyVoseoAndNeutralizesArtifacts(t *testing.T) {
+	home := t.TempDir()
+
+	_, err := Inject(home, claudeAdapter(), model.PersonaGentlemanNeutralArtifacts)
+	if err != nil {
+		t.Fatalf("Inject() error = %v", err)
+	}
+
+	personaPath := filepath.Join(home, ".claude", "CLAUDE.md")
+	personaContent, err := os.ReadFile(personaPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", personaPath, err)
+	}
+	personaText := string(personaContent)
+
+	for _, required := range []string{
+		"When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo)",
+		"If an artifact must be in Spanish, use neutral/standard Spanish by default; do not use Rioplatense Spanish or voseo unless the user explicitly requests that regional variant.",
+		"When delegating work, include this artifact-language rule in any sub-agent prompt that may write code, UI copy, documentation, comments, PR text, or other artifacts.",
+	} {
+		if !strings.Contains(personaText, required) {
+			t.Fatalf("neutral-artifacts persona missing %q", required)
+		}
+	}
+
+	stylePath := filepath.Join(home, ".claude", "output-styles", "gentleman-neutral-artifacts.md")
+	styleContent, err := os.ReadFile(stylePath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", stylePath, err)
+	}
+	styleText := string(styleContent)
+	if !strings.Contains(styleText, "name: Gentleman Neutral Artifacts") {
+		t.Fatal("neutral-artifacts output style missing distinct frontmatter name")
+	}
+	if !strings.Contains(styleText, "If an artifact must be in Spanish, use neutral/standard Spanish by default") {
+		t.Fatal("neutral-artifacts output style missing Spanish artifact guardrail")
+	}
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	settingsContent, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(%q) error = %v", settingsPath, err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(settingsContent, &settings); err != nil {
+		t.Fatalf("Unmarshal settings.json error = %v", err)
+	}
+	if got := settings["outputStyle"]; got != "Gentleman Neutral Artifacts" {
+		t.Fatalf("settings.json outputStyle = %q, want %q", got, "Gentleman Neutral Artifacts")
+	}
+}
+
+func TestInjectClaudeGentlemanNeutralArtifactsCleansStaleGentlemanOutputStyle(t *testing.T) {
+	home := t.TempDir()
+
+	if _, err := Inject(home, claudeAdapter(), model.PersonaGentleman); err != nil {
+		t.Fatalf("Inject(gentleman) error = %v", err)
+	}
+	if _, err := Inject(home, claudeAdapter(), model.PersonaGentlemanNeutralArtifacts); err != nil {
+		t.Fatalf("Inject(gentleman-neutral-artifacts) error = %v", err)
+	}
+
+	stalePath := filepath.Join(home, ".claude", "output-styles", "gentleman.md")
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Fatalf("stale gentleman output style still exists: %v", err)
+	}
+
+	activePath := filepath.Join(home, ".claude", "output-styles", "gentleman-neutral-artifacts.md")
+	if _, err := os.Stat(activePath); err != nil {
+		t.Fatalf("active neutral-artifacts output style missing: %v", err)
+	}
+}
+
 func TestInjectClaudeGentlemanMergesOutputStyleIntoSettings(t *testing.T) {
 	home := t.TempDir()
 

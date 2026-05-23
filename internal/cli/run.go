@@ -873,6 +873,68 @@ func componentPaths(homeDir string, selection model.Selection, adapters []agents
 	return componentPathsWithWorkspace(homeDir, "", selection, adapters, component)
 }
 
+func personaComponentPaths(targetDir string, persona model.PersonaID, adapter agents.Adapter, includeInstallOnly bool) []string {
+	if persona == model.PersonaCustom {
+		return nil
+	}
+	if adapter.Agent() == model.AgentOpenClaw {
+		return []string{filepath.Join(targetDir, "SOUL.md")}
+	}
+	if !adapter.SupportsSystemPrompt() {
+		return nil
+	}
+
+	paths := []string{}
+	if adapter.SystemPromptStrategy() == model.StrategyJinjaModules {
+		paths = append(paths,
+			adapter.SystemPromptFile(targetDir),
+			filepath.Join(adapter.GlobalConfigDir(targetDir), "persona.md"),
+			filepath.Join(adapter.GlobalConfigDir(targetDir), "output-style.md"),
+		)
+		if p := adapter.SettingsPath(targetDir); p != "" {
+			paths = append(paths, p)
+		}
+	} else {
+		paths = append(paths, adapter.SystemPromptFile(targetDir))
+	}
+
+	if includeInstallOnly && (adapter.Agent() == model.AgentOpenCode || adapter.Agent() == model.AgentKilocode) {
+		if p := adapter.SettingsPath(targetDir); p != "" {
+			paths = append(paths, p)
+		}
+	}
+
+	if adapter.SupportsOutputStyles() {
+		activeOutputStyle := ""
+		switch persona {
+		case model.PersonaGentleman:
+			activeOutputStyle = "gentleman.md"
+		case model.PersonaGentlemanNeutralArtifacts:
+			activeOutputStyle = "gentleman-neutral-artifacts.md"
+		}
+		for _, fileName := range []string{"gentleman.md", "gentleman-neutral-artifacts.md"} {
+			path := filepath.Join(adapter.OutputStyleDir(targetDir), fileName)
+			if fileName == activeOutputStyle {
+				paths = append(paths, path)
+				continue
+			}
+			if _, err := os.Stat(path); err == nil {
+				paths = append(paths, path)
+			}
+		}
+		if p := adapter.SettingsPath(targetDir); p != "" && (activeOutputStyle != "" || fileExists(p)) {
+			paths = append(paths, p)
+		}
+	}
+
+	return paths
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func componentPathsWithWorkspace(homeDir, workspaceDir string, selection model.Selection, adapters []agents.Adapter, component model.ComponentID) []string {
 	paths := []string{}
 	for _, adapter := range adapters {
@@ -988,24 +1050,7 @@ func componentPathsWithWorkspace(homeDir, workspaceDir string, selection model.S
 				// No path to report — Context7 injection is skipped for TOML agents.
 			}
 		case model.ComponentPersona:
-			if selection.Persona == model.PersonaCustom {
-				break
-			}
-			if adapter.Agent() == model.AgentOpenClaw {
-				paths = append(paths, filepath.Join(targetDir, "SOUL.md"))
-				break
-			}
-			if adapter.SupportsSystemPrompt() && adapter.SystemPromptStrategy() != model.StrategyJinjaModules {
-				paths = append(paths, adapter.SystemPromptFile(targetDir))
-			}
-			if selection.Persona == model.PersonaGentleman {
-				if adapter.SupportsOutputStyles() {
-					paths = append(paths, adapter.OutputStyleDir(targetDir)+"/gentleman.md")
-					if p := adapter.SettingsPath(targetDir); p != "" {
-						paths = append(paths, p)
-					}
-				}
-			}
+			paths = append(paths, personaComponentPaths(targetDir, selection.Persona, adapter, true)...)
 		case model.ComponentPermission:
 			if p := adapter.SettingsPath(homeDir); p != "" {
 				paths = append(paths, p)

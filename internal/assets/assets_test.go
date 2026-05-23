@@ -14,6 +14,9 @@ func TestAllEmbeddedAssetsAreReadable(t *testing.T) {
 		// Claude agent files
 		"claude/engram-protocol.md",
 		"claude/persona-gentleman.md",
+		"claude/persona-gentleman-neutral-artifacts.md",
+		"claude/output-style-gentleman.md",
+		"claude/output-style-gentleman-neutral-artifacts.md",
 		"claude/sdd-orchestrator.md",
 		"claude/commands/sdd-apply.md",
 		"claude/commands/sdd-archive.md",
@@ -27,6 +30,7 @@ func TestAllEmbeddedAssetsAreReadable(t *testing.T) {
 
 		// OpenCode agent files
 		"opencode/persona-gentleman.md",
+		"opencode/persona-gentleman-neutral-artifacts.md",
 		"opencode/sdd-orchestrator.md",
 		"opencode/sdd-overlay-single.json",
 		"opencode/sdd-overlay-multi.json",
@@ -64,7 +68,9 @@ func TestAllEmbeddedAssetsAreReadable(t *testing.T) {
 
 		// Kimi agent files
 		"kimi/persona-gentleman.md",
+		"kimi/persona-gentleman-neutral-artifacts.md",
 		"kimi/output-style-gentleman.md",
+		"kimi/output-style-gentleman-neutral-artifacts.md",
 		"kimi/sdd-orchestrator.md",
 		"kimi/KIMI.md",
 		"kimi/agents/gentleman.yaml",
@@ -146,7 +152,7 @@ func TestOpenCodeEmbeddedAssetLayout(t *testing.T) {
 		seen[entry.Name()] = true
 	}
 
-	for _, name := range []string{"commands", "plugins", "persona-gentleman.md", "sdd-orchestrator.md", "sdd-overlay-single.json", "sdd-overlay-multi.json"} {
+	for _, name := range []string{"commands", "plugins", "persona-gentleman.md", "persona-gentleman-neutral-artifacts.md", "sdd-orchestrator.md", "sdd-overlay-single.json", "sdd-overlay-multi.json"} {
 		if !seen[name] {
 			t.Fatalf("opencode embedded assets missing %q", name)
 		}
@@ -225,7 +231,7 @@ func TestClaudeEmbeddedAssetLayout(t *testing.T) {
 		seen[entry.Name()] = true
 	}
 
-	for _, name := range []string{"commands", "engram-protocol.md", "persona-gentleman.md", "sdd-orchestrator.md"} {
+	for _, name := range []string{"commands", "engram-protocol.md", "persona-gentleman.md", "persona-gentleman-neutral-artifacts.md", "output-style-gentleman.md", "output-style-gentleman-neutral-artifacts.md", "sdd-orchestrator.md"} {
 		if !seen[name] {
 			t.Fatalf("claude embedded assets missing %q", name)
 		}
@@ -549,6 +555,65 @@ func TestGentlemanLanguageInstructionsDoNotBiasEnglishSessions(t *testing.T) {
 	}
 }
 
+func TestGentlemanNeutralArtifactsLanguageBoundary(t *testing.T) {
+	spanishArtifactGuardrail := "If an artifact must be in Spanish, use neutral/standard Spanish by default; do not use Rioplatense Spanish or voseo unless the user explicitly requests that regional variant."
+	delegationGuardrail := "When delegating work, include this artifact-language rule in any sub-agent prompt that may write code, UI copy, documentation, comments, PR text, or other artifacts."
+
+	for _, path := range []string{
+		"claude/persona-gentleman-neutral-artifacts.md",
+		"generic/persona-gentleman-neutral-artifacts.md",
+		"kiro/persona-gentleman-neutral-artifacts.md",
+		"kimi/persona-gentleman-neutral-artifacts.md",
+		"opencode/persona-gentleman-neutral-artifacts.md",
+	} {
+		t.Run(path, func(t *testing.T) {
+			content := MustRead(path)
+
+			for _, required := range []string{
+				"When replying to the user in Spanish, use warm natural Rioplatense Spanish (voseo)",
+				spanishArtifactGuardrail,
+				delegationGuardrail,
+			} {
+				if !strings.Contains(content, required) {
+					t.Fatalf("%s missing neutral-artifacts guardrail %q", path, required)
+				}
+			}
+		})
+	}
+
+	for _, path := range []string{
+		"claude/output-style-gentleman-neutral-artifacts.md",
+		"kimi/output-style-gentleman-neutral-artifacts.md",
+	} {
+		t.Run(path, func(t *testing.T) {
+			content := MustRead(path)
+
+			for _, required := range []string{
+				"name: Gentleman Neutral Artifacts",
+				spanishArtifactGuardrail,
+				delegationGuardrail,
+			} {
+				if !strings.Contains(content, required) {
+					t.Fatalf("%s missing neutral-artifacts output-style guardrail %q", path, required)
+				}
+			}
+		})
+	}
+
+	t.Run("skills/comment-writer/SKILL.md", func(t *testing.T) {
+		content := MustRead("skills/comment-writer/SKILL.md")
+
+		for _, required := range []string{
+			"If a higher-priority persona or task instruction specifies artifact language, follow it.",
+			"Otherwise, if writing in Spanish, use Rioplatense Spanish/voseo",
+		} {
+			if !strings.Contains(content, required) {
+				t.Fatalf("comment-writer missing precedence-aware language rule %q", required)
+			}
+		}
+	})
+}
+
 // TestPersonasContainContextualSkillLoadingDirective verifies that every
 // persona asset injected into a host's system prompt carries the mandatory
 // "Contextual Skill Loading" directive (design Decisions 1 and 2 of the
@@ -565,11 +630,16 @@ func TestPersonasContainContextualSkillLoadingDirective(t *testing.T) {
 		invokeMsg string // wording specific to the agent family
 	}{
 		{path: "claude/persona-gentleman.md", isClaude: true, invokeMsg: "invoke it via the built-in `Skill` tool"},
+		{path: "claude/persona-gentleman-neutral-artifacts.md", isClaude: true, invokeMsg: "invoke it via the built-in `Skill` tool"},
 		{path: "opencode/persona-gentleman.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
+		{path: "opencode/persona-gentleman-neutral-artifacts.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
 		{path: "generic/persona-gentleman.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
+		{path: "generic/persona-gentleman-neutral-artifacts.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
 		{path: "generic/persona-neutral.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
 		{path: "kiro/persona-gentleman.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
+		{path: "kiro/persona-gentleman-neutral-artifacts.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
 		{path: "kimi/persona-gentleman.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
+		{path: "kimi/persona-gentleman-neutral-artifacts.md", isClaude: false, invokeMsg: "read the matching SKILL.md"},
 	}
 
 	for _, tc := range tests {
