@@ -959,6 +959,31 @@ func TestClassifyCompactTerminalStartDisposition(t *testing.T) {
 			},
 			want: compactTerminalStartRecovery,
 		},
+		{
+			name: "escalated delivery scope with changed recovery target requires recovery",
+			prepare: func(t *testing.T) (CompactState, Snapshot) {
+				repo := initSnapshotRepo(t)
+				writeSnapshotFile(t, repo, "tracked.txt", "historical candidate\n")
+				state := newCompactTestState(t, repo, "terminal-escalated-recovery")
+				results := make([]LensResult, len(state.SelectedLenses))
+				for index, lens := range state.SelectedLenses {
+					results[index] = LensResult{Lens: lens, Findings: []Finding{}, Evidence: []string{"review completed"}}
+				}
+				if err := state.CompleteReview(CompactReviewInput{LensResults: results, Classifications: []FindingEvidence{}, RefuterOutcomes: []EvidenceResult{}}); err != nil {
+					t.Fatal(err)
+				}
+				if err := state.CompleteVerification([]byte("independent verification failed\n"), false); err != nil {
+					t.Fatal(err)
+				}
+				writeSnapshotFile(t, repo, "tracked.txt", "changed recovery target\n")
+				live, err := (SnapshotBuilder{Repo: repo}).Build(context.Background(), Target{Kind: TargetCurrentChanges, IntendedUntracked: []string{}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return state, live
+			},
+			want: compactTerminalStartRecovery,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			state, live := tt.prepare(t)
