@@ -829,7 +829,15 @@ func TestNegotiatedReviewStatusCompletesWithOneHundredHistoricalLeaves(t *testin
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("reviewed candidate\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeNegotiatedStatusHistory(t, repo, 100)
+	approved, escalated := writeNegotiatedStatusHistory(t, repo, 100)
+	if approved != 50 || escalated != 50 {
+		t.Fatalf("terminal history = %d approved, %d escalated; want 50 of each", approved, escalated)
+	}
+	runReviewCLIGit(t, repo, "add", "tracked.txt")
+	runReviewCLIGit(t, repo, "commit", "-qm", "deliver historical target")
+	commonDir := strings.TrimSpace(runReviewCLIGit(t, repo, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+	authorityRoot := filepath.Join(commonDir, "gentle-ai", "review-transactions", "v2")
+	historyBefore := readReviewAuthorityFiles(t, authorityRoot)
 	if stores, err := reviewtransaction.CompactAuthorityLeaves(context.Background(), repo); err != nil {
 		t.Fatalf("load generated status history: %v", err)
 	} else if len(stores) != 100 {
@@ -853,11 +861,51 @@ func TestNegotiatedReviewStatusCompletesWithOneHundredHistoricalLeaves(t *testin
 	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.Applicability != reviewtransaction.TargetApplicabilityAmbiguous ||
-		status.Action != reviewtransaction.TargetStatusActionSelectLineage || len(status.Candidates) != 100 {
+	if status.Applicability != reviewtransaction.TargetApplicabilityUnrelated ||
+		status.Action != reviewtransaction.TargetStatusActionStart || len(status.Candidates) != 0 {
 		t.Fatalf("negotiated 100-leaf status = %#v", status)
 	}
+	var startOutput bytes.Buffer
+	if err := RunReviewFacadeStart([]string{"--cwd", repo, "--lineage", "unrelated-history-start"}, &startOutput); err != nil {
+		t.Fatal(err)
+	}
+	var startedReview ReviewFacadeStartResult
+	if err := json.Unmarshal(startOutput.Bytes(), &startedReview); err != nil {
+		t.Fatal(err)
+	}
+	if startedReview.Action != string(reviewtransaction.CompactStartCreated) {
+		t.Fatalf("START after unrelated status = %#v", startedReview)
+	}
+	for path, before := range historyBefore {
+		after, readErr := os.ReadFile(path)
+		if readErr != nil || !bytes.Equal(before, after) {
+			t.Fatalf("START changed unrelated authority %q: err=%v", path, readErr)
+		}
+	}
 	t.Logf("negotiated status completed 100 terminal histories in %s within the %s contract deadline", elapsed, reviewFacadeOperationTimeout)
+}
+
+func readReviewAuthorityFiles(t *testing.T, root string) map[string][]byte {
+	t.Helper()
+	files := map[string][]byte{}
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		payload, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		files[path] = payload
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }
 
 func TestNegotiatedReviewStatusReturnsFailureForUnreadableAuthority(t *testing.T) {
@@ -896,7 +944,7 @@ func TestNegotiatedReviewStatusReturnsFailureForUnreadableAuthority(t *testing.T
 	}
 }
 
-func writeNegotiatedStatusHistory(t *testing.T, repo string, count int) {
+func writeNegotiatedStatusHistory(t *testing.T, repo string, count int) (approvedCount, escalatedCount int) {
 	t.Helper()
 	snapshot, err := (reviewtransaction.SnapshotBuilder{Repo: repo}).Build(context.Background(), reviewtransaction.Target{
 		Kind: reviewtransaction.TargetCurrentChanges, IntendedUntracked: []string{},
@@ -944,8 +992,14 @@ func writeNegotiatedStatusHistory(t *testing.T, repo string, count int) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if err := state.CompleteVerification([]byte("verified\n"), true); err != nil {
+		approved := index%2 == 0
+		if err := state.CompleteVerification([]byte("verified\n"), approved); err != nil {
 			t.Fatal(err)
+		}
+		if approved {
+			approvedCount++
+		} else {
+			escalatedCount++
 		}
 		statePayload, err := json.Marshal(state)
 		if err != nil {
@@ -974,4 +1028,5 @@ func writeNegotiatedStatusHistory(t *testing.T, repo string, count int) {
 			t.Fatal(err)
 		}
 	}
+	return approvedCount, escalatedCount
 }
