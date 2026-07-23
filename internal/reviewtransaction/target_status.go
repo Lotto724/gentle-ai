@@ -146,7 +146,6 @@ func assessTargetStatusSnapshot(ctx context.Context, repo string, request Target
 	}
 
 	candidates := []targetStatusCandidate{}
-	scopeChangedCandidates := []targetStatusCandidate{}
 	for lineage, candidate := range view.compact {
 		if request.LineageID != "" && request.LineageID != lineage {
 			continue
@@ -174,20 +173,20 @@ func assessTargetStatusSnapshot(ctx context.Context, repo string, request Target
 			}
 		}
 		if state.State == StateEscalated {
-			requested := state
-			requested.InitialSnapshot = live
-			if compactStartDeliveryScopeMatches(state, requested) {
-				candidate.correctionRecovery = compactEscalatedRecoveryTargetChanged(state.CurrentSnapshot, live)
-				if candidate.correctionRecovery {
-					candidate.recoveryDisposition = RecoveryEscalated
-				} else if eligibility, ok, inspectErr := InspectCompactFinalVerificationRetrySource(ctx, repo, state.LineageID, candidate.compact.Revision); inspectErr != nil {
+			switch classifyCompactTerminalStartDisposition(state, live) {
+			case compactTerminalStartRecovery:
+				candidate.correctionRecovery = true
+				candidate.recoveryDisposition = RecoveryEscalated
+				candidates = append(candidates, candidate)
+			case compactTerminalStartClaimant:
+				if eligibility, ok, inspectErr := InspectCompactFinalVerificationRetrySource(ctx, repo, state.LineageID, candidate.compact.Revision); inspectErr != nil {
 					return targetStatusFailure(base, inspectErr)
 				} else if ok {
 					candidate.finalVerificationRetry = &eligibility
 				}
 				candidates = append(candidates, candidate)
-				continue
 			}
+			continue
 		} else if state.State == StateCorrectionRequired {
 			claim, claimErr := classifyCompactCorrectionTargetForStatus(ctx, repo, state, live)
 			if claimErr != nil {
@@ -203,14 +202,18 @@ func assessTargetStatusSnapshot(ctx context.Context, repo string, request Target
 				candidates = append(candidates, candidate)
 				continue
 			}
+		} else if state.State == StateApproved {
+			switch classifyCompactTerminalStartDisposition(state, live) {
+			case compactTerminalStartClaimant:
+				candidates = append(candidates, candidate)
+			case compactTerminalStartRecovery:
+				candidate.correctionRecovery = true
+				candidate.recoveryDisposition = RecoveryScopeChanged
+				candidates = append(candidates, candidate)
+			}
+			continue
 		} else if compactLiveTargetMatchesValidatedSnapshot(state, live, true) {
 			candidates = append(candidates, candidate)
-			continue
-		}
-		if request.LineageID == "" && candidate.receiptPublished && (state.State == StateApproved || state.State == StateEscalated) {
-			if projectCompactTerminalHistory(state, live) == compactTerminalHistoryScopeChanged {
-				scopeChangedCandidates = append(scopeChangedCandidates, candidate)
-			}
 		}
 	}
 	for lineage, candidate := range view.legacy {
@@ -240,18 +243,6 @@ func assessTargetStatusSnapshot(ctx context.Context, repo string, request Target
 		}
 		return candidates[i].version < candidates[j].version
 	})
-	sort.Slice(scopeChangedCandidates, func(i, j int) bool {
-		return scopeChangedCandidates[i].lineage < scopeChangedCandidates[j].lineage
-	})
-	if len(candidates) == 0 && len(scopeChangedCandidates) > 1 {
-		base.Applicability = TargetApplicabilityAmbiguous
-		base.Action = TargetStatusActionSelectLineage
-		base.Replayability = ReplayabilityStatusRequired
-		for _, candidate := range scopeChangedCandidates {
-			base.CandidateLineageIDs = append(base.CandidateLineageIDs, candidate.lineage)
-		}
-		return base, nil
-	}
 	switch len(candidates) {
 	case 0:
 		base.Applicability = TargetApplicabilityUnrelated

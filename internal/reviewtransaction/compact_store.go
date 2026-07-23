@@ -766,10 +766,11 @@ func StartCompactAuthority(ctx context.Context, repo string, request CompactStar
 	requestedClaims := false
 	for _, store := range leaves {
 		existing := records[store.lineageID].State
-		if existing.State == StateEscalated && compactStartDeliveryScopeMatches(existing, request.State) {
-			if compactEscalatedRecoveryTargetChanged(existing.CurrentSnapshot, request.State.InitialSnapshot) {
+		if existing.State == StateEscalated || existing.State == StateApproved {
+			switch classifyCompactTerminalStartDisposition(existing, request.State.InitialSnapshot) {
+			case compactTerminalStartRecovery:
 				recoveryCandidates = append(recoveryCandidates, store)
-			} else {
+			case compactTerminalStartClaimant:
 				claimants = append(claimants, store)
 				requestedClaims = requestedClaims || store.lineageID == request.State.LineageID
 			}
@@ -788,11 +789,6 @@ func StartCompactAuthority(ctx context.Context, repo string, request CompactStar
 			case compactCorrectionTargetRecover:
 				recoveryCandidates = append(recoveryCandidates, store)
 			}
-			continue
-		}
-		if existing.State == StateApproved && compactStartDeliveryScopeMatches(existing, request.State) &&
-			existing.CurrentSnapshot.CandidateTree != request.State.InitialSnapshot.CandidateTree {
-			recoveryCandidates = append(recoveryCandidates, store)
 			continue
 		}
 		if compactStartClaimsTarget(ctx, requestedStore.repo, existing, request.State) {
@@ -993,6 +989,39 @@ func compactStartClaimsTarget(ctx context.Context, repo string, existing, reques
 	}
 	candidate := requested.InitialSnapshot.CandidateTree
 	return candidate == existing.InitialSnapshot.CandidateTree || candidate == existing.CurrentSnapshot.CandidateTree
+}
+
+type compactTerminalStartDisposition uint8
+
+const (
+	compactTerminalStartUnrelated compactTerminalStartDisposition = iota
+	compactTerminalStartClaimant
+	compactTerminalStartRecovery
+)
+
+// classifyCompactTerminalStartDisposition is shared by STATUS and locked START
+// after graph validation and live-snapshot validation have completed.
+func classifyCompactTerminalStartDisposition(existing CompactState, live Snapshot) compactTerminalStartDisposition {
+	requested := existing
+	requested.InitialSnapshot = live
+	switch existing.State {
+	case StateEscalated:
+		if !compactStartDeliveryScopeMatches(existing, requested) {
+			return compactTerminalStartUnrelated
+		}
+		if compactEscalatedRecoveryTargetChanged(existing.CurrentSnapshot, live) {
+			return compactTerminalStartRecovery
+		}
+		return compactTerminalStartClaimant
+	case StateApproved:
+		if compactLiveTargetMatchesValidatedSnapshot(existing, live, true) {
+			return compactTerminalStartClaimant
+		}
+		if compactStartDeliveryScopeMatches(existing, requested) && existing.CurrentSnapshot.CandidateTree != live.CandidateTree {
+			return compactTerminalStartRecovery
+		}
+	}
+	return compactTerminalStartUnrelated
 }
 
 // compactStartDeliveryScopeMatches compares the immutable delivery boundary

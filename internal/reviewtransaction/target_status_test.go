@@ -906,6 +906,69 @@ func TestAssessTargetStatusTreatsCommittedCorrectedIntendedHistoryAsUnrelated(t 
 	}
 }
 
+func TestClassifyCompactTerminalStartDisposition(t *testing.T) {
+	requireSnapshotGit(t)
+	for _, tt := range []struct {
+		name    string
+		prepare func(*testing.T) (CompactState, Snapshot)
+		want    compactTerminalStartDisposition
+	}{
+		{
+			name: "exact approved target claims authority",
+			prepare: func(t *testing.T) (CompactState, Snapshot) {
+				repo := initSnapshotRepo(t)
+				writeSnapshotFile(t, repo, "tracked.txt", "candidate\n")
+				state, _, _ := approvedCompactCurrentChangesFixture(t, repo, "terminal-exact", []string{})
+				live, err := (SnapshotBuilder{Repo: repo}).Build(context.Background(), Target{Kind: TargetCurrentChanges, IntendedUntracked: []string{}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return state, live
+			},
+			want: compactTerminalStartClaimant,
+		},
+		{
+			name: "delivered authority does not claim a follow-up target",
+			prepare: func(t *testing.T) (CompactState, Snapshot) {
+				repo := initSnapshotRepo(t)
+				writeSnapshotFile(t, repo, "tracked.txt", "historical candidate\n")
+				state, _, _ := approvedCompactCurrentChangesFixture(t, repo, "terminal-unrelated", []string{})
+				gitSnapshot(t, repo, "add", "tracked.txt")
+				gitSnapshot(t, repo, "commit", "-m", "deliver historical target")
+				writeSnapshotFile(t, repo, "tracked.txt", "follow-up target\n")
+				live, err := (SnapshotBuilder{Repo: repo}).Build(context.Background(), Target{Kind: TargetCurrentChanges, IntendedUntracked: []string{}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return state, live
+			},
+			want: compactTerminalStartUnrelated,
+		},
+		{
+			name: "same delivery scope with changed candidate requires recovery",
+			prepare: func(t *testing.T) (CompactState, Snapshot) {
+				repo := initSnapshotRepo(t)
+				writeSnapshotFile(t, repo, "tracked.txt", "historical candidate\n")
+				state, _, _ := approvedCompactCurrentChangesFixture(t, repo, "terminal-recovery", []string{})
+				writeSnapshotFile(t, repo, "tracked.txt", "changed candidate\n")
+				live, err := (SnapshotBuilder{Repo: repo}).Build(context.Background(), Target{Kind: TargetCurrentChanges, IntendedUntracked: []string{}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				return state, live
+			},
+			want: compactTerminalStartRecovery,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			state, live := tt.prepare(t)
+			if got := classifyCompactTerminalStartDisposition(state, live); got != tt.want {
+				t.Fatalf("terminal disposition = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAssessTargetStatusTreatsMissingHistoricalIntendedPathAsNonApplicable(t *testing.T) {
 	requireSnapshotGit(t)
 	repo := initSnapshotRepo(t)
